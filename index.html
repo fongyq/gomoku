@@ -63,12 +63,18 @@
     }
 
     .topbar{
-      display:flex;
-      gap: 12px;
-      align-items:center;
-      justify-content:center;
+      position: relative;
+      z-index: 30;
       padding-top: 4px;
-      flex-wrap:wrap;
+      overflow: visible;
+    }
+    .topbarScroll{
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      width: 100%;
     }
 
     .topbar .item{
@@ -289,6 +295,8 @@
     .checkbox span{ font-size: var(--topFontSize); }
 
     .main{
+      position: relative;
+      z-index: 1;
       display:flex;
       align-items:center;
       justify-content:center;
@@ -626,25 +634,33 @@
         --avatarSize: min(100px, 30vw);
         --pillSize: min(68px, 20vw);
         --topFontSize: 12px;
+        /* 手机端星位/落子再向右微调（天元与四星点） */
+        --gridNudgeX: 4px;
       }
       .wrap{
         padding-left: 8px;
         padding-right: 8px;
       }
-      /* 顶栏：单行横向排布，略窄按钮，必要时横向滑动 */
+      /* 顶栏：横向滚动放在内层，外层不裁剪，tooltip 才能盖住棋盘 */
       .topbar{
+        z-index: 400;
+        padding: 2px 0 6px;
+        margin: 0;
+        overflow: visible;
+      }
+      .topbarScroll{
         flex-wrap: nowrap;
         justify-content: flex-start;
         align-items: center;
         gap: 6px;
         overflow-x: auto;
-        overflow-y: hidden;
+        overflow-y: visible;
         -webkit-overflow-scrolling: touch;
-        padding: 2px 2px 6px;
         margin: 0 -2px;
+        padding: 0 2px 2px;
         scrollbar-width: none;
       }
-      .topbar::-webkit-scrollbar{
+      .topbarScroll::-webkit-scrollbar{
         display: none;
         width: 0;
         height: 0;
@@ -661,6 +677,12 @@
         padding: 8px 10px;
         font-size: 12px;
         min-height: 40px;
+      }
+      /* 宽度约 +50%（相对紧凑「开始」按钮） */
+      #startBtn.pillBtn{
+        min-width: 120px;
+        padding-left: 18px;
+        padding-right: 18px;
       }
       .checkbox{
         width: auto;
@@ -687,11 +709,6 @@
         opacity: 0;
         pointer-events: none;
       }
-      .tooltip.tooltipOpen .tooltipText{
-        opacity: 1;
-        pointer-events: auto;
-        z-index: 80;
-      }
       .tooltip .q{
         width: 18px;
         height: 18px;
@@ -701,7 +718,18 @@
       .switchBtn .btnIcon{ font-size: 12px; }
       .tooltipText{
         font-size: 11px;
-        width: min(300px, 85vw);
+        width: min(300px, calc(100vw - 24px));
+      }
+      /* 展开时用 fixed 脱离滚动层，否则会被 topbarScroll 裁切且被棋盘挡住 */
+      .tooltip.tooltipOpen .tooltipText{
+        opacity: 1;
+        pointer-events: auto;
+        position: fixed;
+        left: 50%;
+        right: auto;
+        top: calc(env(safe-area-inset-top, 0px) + 52px);
+        transform: translateX(-50%);
+        z-index: 10000;
       }
 
       /* 主区：第一行棋盘通栏，第二行左黑右白 */
@@ -773,6 +801,7 @@
 <body>
   <div class="wrap">
     <div class="topbar">
+      <div class="topbarScroll">
       <div class="item">
         <div class="tooltip" id="tooltip" tabindex="0" role="button" aria-label="查看游戏规则" aria-expanded="false">
           <span class="q">?</span>
@@ -807,6 +836,7 @@
 
       <div class="item">
         <button class="pillBtn" id="shareBtn" type="button"><span class="btnIcon">&#128279;</span><span>分享</span></button>
+      </div>
       </div>
     </div>
 
