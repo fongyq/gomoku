@@ -645,6 +645,8 @@
         --avatarSize: min(100px, 30vw);
         --pillSize: min(68px, 20vw);
         --topFontSize: 12px;
+        /* 星位五点：相对桌面约放大一倍，小屏更易辨认 */
+        --starSize: clamp(8px, 1.6vw, 13.6px);
       }
       .wrap{
         padding-left: 8px;
@@ -702,11 +704,19 @@
         padding-left: 18px;
         padding-right: 18px;
       }
+      /* 相对其它 pill 12px 再放大 10%（≈1.21×），暂停条同步缩放 */
       .pillBtn.startCtl{
-        font-size: calc(12px * 1.1);
+        font-size: calc(12px * 1.1 * 1.1);
       }
       .pillBtn.startCtl .btnIcon.play{
-        font-size: calc(12px * 1.1);
+        font-size: calc(12px * 1.1 * 1.1);
+      }
+      .pillBtn.startCtl .btnIcon.pause{
+        gap: calc(3px * 1.1 * 1.1);
+      }
+      .pillBtn.startCtl .btnIcon.pause .pauseBar{
+        width: calc(3px * 1.1 * 1.1);
+        height: calc(11px * 1.1 * 1.1);
       }
       .checkbox{
         width: auto;
@@ -775,9 +785,25 @@
       .main > .boardOuter{
         grid-column: 1 / -1;
         grid-row: 1;
-        width: 100%;
-        max-width: var(--boardSize);
+        /* 严格正方形：宽高同一上限，避免内层 aspect-ratio + flex 在部分 WebKit 下竖向偏高 */
+        width: min(100%, var(--boardSize));
+        max-width: min(100%, var(--boardSize));
+        aspect-ratio: 1 / 1;
         justify-self: center;
+        align-self: center;
+        min-width: 0;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .main > .boardOuter .boardFrame{
+        flex: 1 1 0;
+        min-height: 0;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        aspect-ratio: unset;
       }
       .main > .side:first-of-type{
         grid-column: 1;
