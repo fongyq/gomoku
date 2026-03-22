@@ -894,7 +894,7 @@
           <span>规则</span>
           <div class="tooltipText">
             <div><b>连珠</b>：横/竖/斜任意方向连成 5 子即胜。</div>
-            <div><b>计时</b>：对手轮到你时有 <b>30s</b>，超时未落子则判负。</div>
+            <div><b>计时</b>：落子时间有 30 秒，超时未落子则判负。</div>
             <div><b>二次确认</b>：第一次点位出现半透明预览；第二次点同一位置才落子。</div>
             <div><b>人机</b>：机器人旁可选 <b>初级</b> / <b>进阶</b>；进阶会多看一步应手，棋力更强（仍前端计算，适度耗时）。</div>
           </div>
@@ -1420,6 +1420,151 @@
       }
     }
 
+    // ========== 背景音乐：舒缓五声旋律循环（Web Audio，无外链） ==========
+    // 与「开始/暂停」一致：仅在对局进行中且未暂停时播放；需用户点击开始后才有权 resume（浏览器策略）。
+    const gameBgm = (function(){
+      let ctx = null;
+      let master = null;
+      let poller = null;
+      let running = false;
+      let step = 0;
+      let nextT = 0;
+      /** 音与音之间的基础间隔（秒），越大越舒缓 */
+      const baseStepSec = 0.36;
+      /** 单音长度，略重叠下一步形成连贯感 */
+      const noteDur = 0.26;
+      /** 主输出增益（再 +100%：0.15 → 0.3） */
+      const targetVol = 0.3;
+      /** 单音相对峰值（再 +100%） */
+      const notePeak = 0.256;
+      /** C 大调五声：低八度 + 高八度，索引 0–4 / 5–9 */
+      const scale = [
+        261.63, 293.66, 329.63, 392.00, 440.00,
+        523.25, 587.33, 659.25, 783.99, 880.00
+      ];
+      /**
+       * 较长乐句：起伏舒缓，len 为间隔倍数（2 = 长留白）
+       * rest: true 仅休止，不发声
+       */
+      const phrase = [
+        { i: 5 }, { i: 7 }, { i: 9 }, { i: 8 }, { i: 7, len: 2 },
+        { i: 5 }, { i: 7 }, { i: 5 }, { i: 3 }, { i: 2, len: 2 },
+        { i: 0 }, { i: 2 }, { i: 3 }, { i: 5 }, { i: 7, len: 2 },
+        { i: 5 }, { i: 3 }, { i: 2 }, { i: 3 }, { i: 5, len: 2 },
+        { i: 4 }, { i: 5 }, { i: 7 }, { i: 5 }, { i: 3, len: 2 },
+        { i: 2 }, { i: 0 }, { i: 2 }, { i: 3 }, { i: 2, len: 2 },
+        { rest: true, len: 2 },
+        { i: 0 }, { i: 2 }, { i: 5 }, { i: 7 }, { i: 9, len: 2 },
+        { i: 8 }, { i: 7 }, { i: 5 }, { i: 7 }, { i: 8, len: 2 },
+        { i: 7 }, { i: 5 }, { i: 3 }, { i: 5 }, { i: 7, len: 2 },
+        { i: 5 }, { i: 3 }, { i: 2 }, { i: 0 }, { i: 2, len: 2 },
+        { i: 3 }, { i: 5 }, { i: 7 }, { i: 5 }, { i: 3, len: 2 },
+        { i: 2 }, { i: 3 }, { i: 2 }, { rest: true, len: 2 },
+        { i: 5 }, { i: 7 }, { i: 8 }, { i: 7 }, { i: 5, len: 2 }
+      ];
+
+      function getCtx(){
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        if (!ctx) ctx = new Ctx();
+        return ctx;
+      }
+
+      function playTone(when, freq, peak){
+        if (!ctx || !master) return;
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, when);
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(peak, when + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0009, when + noteDur);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(when);
+        osc.stop(when + noteDur + 0.04);
+      }
+
+      /** 高音区加极轻低八度和声，增加厚度不抢戏 */
+      function playMelodyStep(when, idx, peak){
+        playTone(when, scale[idx], peak);
+        if (idx >= 5 && idx <= 9){
+          playTone(when, scale[idx - 5], peak * 0.24);
+        }
+      }
+
+      function schedule(){
+        if (!running || !ctx) return;
+        try{
+          if (ctx.state === 'suspended') ctx.resume();
+        } catch {}
+        const ahead = 0.65;
+        const n = phrase.length;
+        while (nextT < ctx.currentTime + ahead){
+          const cell = phrase[step % n];
+          const mult = cell.len != null ? cell.len : 1;
+          if (!cell.rest && typeof cell.i === 'number'){
+            playMelodyStep(nextT, cell.i, notePeak);
+          }
+          step++;
+          nextT += baseStepSec * mult;
+        }
+      }
+
+      function fadeIn(){
+        if (!ctx || !master) return;
+        const t = ctx.currentTime;
+        master.gain.cancelScheduledValues(t);
+        const cur = Math.min(master.gain.value, targetVol);
+        master.gain.setValueAtTime(cur, t);
+        master.gain.linearRampToValueAtTime(targetVol, t + 0.45);
+      }
+
+      function fadeOut(){
+        if (!ctx || !master) return;
+        const t = ctx.currentTime;
+        master.gain.cancelScheduledValues(t);
+        master.gain.setValueAtTime(master.gain.value, t);
+        master.gain.linearRampToValueAtTime(0, t + 0.22);
+      }
+
+      function startInternal(){
+        const c = getCtx();
+        if (!c) return;
+        if (!master){
+          master = c.createGain();
+          master.gain.value = 0;
+          master.connect(c.destination);
+        }
+        running = true;
+        nextT = c.currentTime + 0.04;
+        fadeIn();
+        if (poller) clearInterval(poller);
+        poller = setInterval(schedule, 72);
+        schedule();
+      }
+
+      function stopInternal(){
+        running = false;
+        if (poller){
+          clearInterval(poller);
+          poller = null;
+        }
+        fadeOut();
+      }
+
+      /** @param {boolean} want 是否与「对局进行中且未暂停」一致 */
+      function sync(want){
+        if (want){
+          if (!running) startInternal();
+        } else {
+          if (running) stopInternal();
+        }
+      }
+
+      return { sync };
+    })();
+
     // ========== 渲染 ==========
     function render(state){
       // 禁手模式同步 UI 状态（本地开关 -> state，避免不同标签页不一致）
@@ -1460,6 +1605,9 @@
       $whitePill.classList.toggle('showWin', state.gameOver && state.winner === PLAYER.WHITE);
 
       updateStartBtn(state);
+
+      const bgmOn = !!(state.started && !state.gameOver && !state.timerPaused);
+      gameBgm.sync(bgmOn);
 
       // 星点：只要该交点已经落子（黑/白），就隐藏星点，确保不会从白棋下面露出来
       for (let i=0;i<starDots.length;i++){
