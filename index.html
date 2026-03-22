@@ -27,15 +27,13 @@
       --topFontSize: 15px;
 
       /* 交点/落子尺寸（与棋盘网格解耦，避免“落在单元格中心”的视觉偏差） */
-      --stoneSize: clamp(16px, 3.2vw, 28px);
+      --stoneSize: clamp(17.6px, 3.52vw, 30.8px);
       /* 缩小到原来的 ~1/3 */
       /* 放大 1 倍确保可见 */
       --starSize: clamp(4px, 0.8vw, 6.8px);
       --hitSize: clamp(26px, 4.4vw, 42px);
 
       --gridLineW: 2px;
-      /* 线与落子/星点视觉对齐微调（略向右，抵消线宽与亚像素误差） */
-      --gridNudgeX: 1.5px;
     }
 
     *{ box-sizing:border-box; }
@@ -67,14 +65,15 @@
       z-index: 30;
       padding-top: 4px;
       overflow: visible;
-    }
-    .topbarScroll{
       display: flex;
-      gap: 12px;
-      align-items: center;
-      justify-content: center;
       flex-wrap: wrap;
-      width: 100%;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+    }
+    /* 桌面：子项直接参与顶栏 flex，视觉上仍为一行五钮 */
+    .topbarScroll{
+      display: contents;
     }
 
     .topbar .item{
@@ -112,6 +111,17 @@
       font-size: 14px;
       line-height: 1;
       opacity: .9;
+    }
+    /* 开始/暂停：文案与图标约 +10%，高度仍由 min-height 控制 */
+    .pillBtn.startCtl{
+      font-size: calc(var(--topFontSize) * 1.1);
+    }
+    .pillBtn.startCtl .btnIcon.play{
+      font-size: calc(14px * 1.1);
+    }
+    .pillBtn.startCtl .btnIcon.pause .pauseBar{
+      width: calc(3px * 1.1);
+      height: calc(11px * 1.1);
     }
     .pillBtn.startCtl .btnIcon.play{
       color: #1da75a;
@@ -499,7 +509,7 @@
       width: var(--hitSize);
       height: var(--hitSize);
       position:absolute;
-      transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
+      transform: translate3d(-50%, -50%, 0);
       cursor:pointer;
     }
 
@@ -512,7 +522,7 @@
       opacity:0;
       z-index: 1;
       pointer-events:none;
-      transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
+      transform: translate3d(-50%, -50%, 0);
     }
     .starDot.on{ opacity: .92; }
 
@@ -634,21 +644,28 @@
         --avatarSize: min(100px, 30vw);
         --pillSize: min(68px, 20vw);
         --topFontSize: 12px;
-        /* 手机端星位/落子再向右微调（天元与四星点） */
-        --gridNudgeX: 4px;
       }
       .wrap{
         padding-left: 8px;
         padding-right: 8px;
       }
-      /* 顶栏：横向滚动放在内层，外层不裁剪，tooltip 才能盖住棋盘 */
+      /* 顶栏：规则在滚动条外，避免 iOS 上 fixed/层叠被裁切；其余横向滚动 */
       .topbar{
-        z-index: 400;
+        z-index: 500;
         padding: 2px 0 6px;
         margin: 0;
         overflow: visible;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        gap: 6px;
+      }
+      .topbar > .item:first-child{
+        flex-shrink: 0;
       }
       .topbarScroll{
+        display: flex;
+        flex: 1;
+        min-width: 0;
         flex-wrap: nowrap;
         justify-content: flex-start;
         align-items: center;
@@ -683,6 +700,12 @@
         min-width: 120px;
         padding-left: 18px;
         padding-right: 18px;
+      }
+      .pillBtn.startCtl{
+        font-size: calc(12px * 1.1);
+      }
+      .pillBtn.startCtl .btnIcon.play{
+        font-size: calc(12px * 1.1);
       }
       .checkbox{
         width: auto;
@@ -721,15 +744,16 @@
         width: min(300px, calc(100vw - 24px));
       }
       /* 展开时用 fixed 脱离滚动层，否则会被 topbarScroll 裁切且被棋盘挡住 */
+      /* 规则按钮已在 overflow 容器外，用绝对定位即可盖住棋盘 */
       .tooltip.tooltipOpen .tooltipText{
         opacity: 1;
         pointer-events: auto;
-        position: fixed;
+        position: absolute;
         left: 50%;
         right: auto;
-        top: calc(env(safe-area-inset-top, 0px) + 52px);
+        top: calc(100% + 6px);
         transform: translateX(-50%);
-        z-index: 10000;
+        z-index: 8000;
       }
 
       /* 主区：第一行棋盘通栏，第二行左黑右白 */
@@ -785,10 +809,6 @@
         -webkit-transform: translateZ(0);
         transform: translateZ(0);
       }
-      .starDot{
-        -webkit-transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
-        transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
-      }
     }
 
     /* 可点击反馈：仅真实鼠标设备，避免触摸端 :active 闪烁带动棋盘抖 */
@@ -801,7 +821,6 @@
 <body>
   <div class="wrap">
     <div class="topbar">
-      <div class="topbarScroll">
       <div class="item">
         <div class="tooltip" id="tooltip" tabindex="0" role="button" aria-label="查看游戏规则" aria-expanded="false">
           <span class="q">?</span>
@@ -813,7 +832,7 @@
           </div>
         </div>
       </div>
-
+      <div class="topbarScroll">
       <div class="item">
         <label class="checkbox">
           <input type="checkbox" id="forbiddenMode" />
@@ -1238,6 +1257,12 @@
     const cellEls = Array.from({length: BOARD_N}, () => Array.from({length: BOARD_N}, () => null));
     const starDots = [];
 
+    /** 与 .board::before 网格一致：线宽 var(--gridLineW)，15 条线在 14 段内均匀分布 */
+    function gridIntersectionCss(i){
+      const g = BOARD_N - 1;
+      return `calc(${i} * (100% - var(--gridLineW)) / ${g} + var(--gridLineW) / 2)`;
+    }
+
     function isStarPoint(r,c){
       // 15x15 五子星位：中心 + 对角偏移 4 格（绕中心旋转45度后正确）
       // (7,7) + (3,3)(3,11)(11,3)(11,11)
@@ -1260,10 +1285,8 @@
           cell.className = 'cell';
           cell.dataset.r = r;
           cell.dataset.c = c;
-          // 让落子/星点严格落在“线与线”的交点上：
-          // 左侧 0..100% 与棋盘背景竖线间隔一致（15 条线 => 14 个间隔）
-          cell.style.left = `${(c / (BOARD_N - 1)) * 100}%`;
-          cell.style.top = `${(r / (BOARD_N - 1)) * 100}%`;
+          cell.style.left = gridIntersectionCss(c);
+          cell.style.top = gridIntersectionCss(r);
 
           const stone = document.createElement('div');
           stone.className = 'stone';
@@ -1288,9 +1311,8 @@
           if (!isStarPoint(r,c)) continue;
           const dot = document.createElement('div');
           dot.className = 'starDot on';
-          // 星点与落子同一套“交点坐标”映射
-          dot.style.left = `${(c / (BOARD_N - 1)) * 100}%`;
-          dot.style.top = `${(r / (BOARD_N - 1)) * 100}%`;
+          dot.style.left = gridIntersectionCss(c);
+          dot.style.top = gridIntersectionCss(r);
           dot.dataset.r = String(r);
           dot.dataset.c = String(c);
           $board.appendChild(dot);
