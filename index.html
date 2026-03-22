@@ -475,7 +475,7 @@
       width: var(--hitSize);
       height: var(--hitSize);
       position:absolute;
-      transform: translate(-50%, -50%);
+      transform: translate3d(-50%, -50%, 0);
       cursor:pointer;
     }
 
@@ -553,8 +553,8 @@
       animation: dropIn .22s ease-out both;
     }
     @keyframes dropIn{
-      0%{ transform: scale(.7) translateY(-6px); opacity:0; }
-      100%{ transform: scale(1) translateY(0); opacity:1; }
+      0%{ transform: scale(.7) translate3d(0, -6px, 0); opacity:0; }
+      100%{ transform: scale(1) translate3d(0, 0, 0); opacity:1; }
     }
 
     /* 获胜动画：五子连珠 */
@@ -602,20 +602,136 @@
       color:#111;
     }
 
-    /* 小屏适配：侧边栏缩小 */
+    /* 小屏（手机）：顶栏单行、棋盘在上双方在下、减轻落子抖动 */
     @media (max-width: 640px){
       :root{
-        --boardSize: min(92vw, 430px);
-        --avatarSize: 124px;
-        --pillSize: 78px;
+        --boardSize: min(calc(100vw - 20px), 92vw, 430px);
+        --avatarSize: min(100px, 30vw);
+        --pillSize: min(68px, 20vw);
+        --topFontSize: 12px;
       }
-      .side{ width: 45vw; }
-      .topbar .item{ max-width: 210px; }
-      .tooltipText{ font-size: 11px; }
+      .wrap{
+        padding-left: 8px;
+        padding-right: 8px;
+      }
+      /* 顶栏：单行横向排布，略窄按钮，必要时横向滑动 */
+      .topbar{
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        padding: 2px 2px 6px;
+        margin: 0 -2px;
+        scrollbar-width: none;
+      }
+      .topbar::-webkit-scrollbar{
+        display: none;
+        width: 0;
+        height: 0;
+      }
+      .topbar .item{
+        flex: 0 0 auto;
+        max-width: none;
+        min-width: 0;
+      }
+      .pillBtn,
+      .switchBtn{
+        width: auto;
+        max-width: none;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .checkbox{
+        width: auto;
+        max-width: none;
+        padding: 8px 10px;
+        gap: 6px;
+      }
+      .checkbox span{ font-size: 12px; }
+      .tooltip{
+        width: auto;
+        max-width: none;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .tooltip .q{
+        width: 18px;
+        height: 18px;
+        font-size: 11px;
+      }
+      .switchBtn .switchLabel{ font-size: 12px; }
+      .switchBtn .btnIcon{ font-size: 12px; }
+      .tooltipText{
+        font-size: 11px;
+        width: min(300px, 85vw);
+      }
+
+      /* 主区：第一行棋盘通栏，第二行左黑右白 */
+      .main{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto;
+        gap: 10px 8px;
+        width: 100%;
+        align-items: start;
+        justify-items: center;
+      }
+      .main > .boardOuter{
+        grid-column: 1 / -1;
+        grid-row: 1;
+        width: 100%;
+        max-width: var(--boardSize);
+        justify-self: center;
+      }
+      .main > .side:first-of-type{
+        grid-column: 1;
+        grid-row: 2;
+        width: 100%;
+        max-width: none;
+        justify-self: stretch;
+        padding-top: 0;
+      }
+      .main > .side:last-of-type{
+        grid-column: 2;
+        grid-row: 2;
+        width: 100%;
+        max-width: none;
+        justify-self: stretch;
+        padding-top: 0;
+      }
+      .playerCard{
+        gap: 6px;
+        width: 100%;
+        max-width: 168px;
+        margin: 0 auto;
+      }
+      .label{ font-size: 10px; }
+
+      /* Safari/iOS：合成层 + 裁剪外溢，减少落子时网格与背景重算抖动 */
+      .board{
+        overflow: hidden;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        isolation: isolate;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .board::before{
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+      }
+      .starDot{
+        -webkit-transform: translate3d(-50%, -50%, 0);
+        transform: translate3d(-50%, -50%, 0);
+      }
     }
 
-    /* 可点击反馈 */
-    .cell:active .stone{ transform: scale(.95); }
+    /* 可点击反馈：仅真实鼠标设备，避免触摸端 :active 闪烁带动棋盘抖 */
+    @media (hover: hover) and (pointer: fine){
+      .cell:active .stone{ transform: scale(.95); }
+    }
   </style>
 </head>
 
@@ -1109,7 +1225,7 @@
           // 星点与落子同一套“交点坐标”映射
           dot.style.left = `${(c / (BOARD_N - 1)) * 100}%`;
           dot.style.top = `${(r / (BOARD_N - 1)) * 100}%`;
-          dot.style.transform = 'translate(-50%, -50%)';
+          dot.style.transform = 'translate3d(-50%, -50%, 0)';
           dot.dataset.r = String(r);
           dot.dataset.c = String(c);
           $board.appendChild(dot);
