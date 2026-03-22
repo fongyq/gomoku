@@ -34,6 +34,8 @@
       --hitSize: clamp(26px, 4.4vw, 42px);
 
       --gridLineW: 2px;
+      /* 线与落子/星点视觉对齐微调（略向右，抵消线宽与亚像素误差） */
+      --gridNudgeX: 1.5px;
     }
 
     *{ box-sizing:border-box; }
@@ -96,6 +98,9 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      min-height: 44px;
+      box-sizing: border-box;
+      line-height: 1.15;
     }
     .pillBtn .btnIcon{
       font-size: 14px;
@@ -141,6 +146,9 @@
       align-items: center;
       justify-content: center;
       gap: 5px;
+      min-height: 44px;
+      box-sizing: border-box;
+      line-height: 1.15;
     }
     .switchBtn .btnIcon{
       font-size: 13px;
@@ -218,7 +226,9 @@
       box-shadow: 0 10px 22px rgba(0,0,0,.06);
       justify-content:center;
       text-align:center;
-      line-height:1.2;
+      line-height:1.15;
+      min-height: 44px;
+      box-sizing: border-box;
     }
     .tooltip .q{
       display:inline-flex;
@@ -264,9 +274,15 @@
       padding: 10px 14px;
       box-shadow: 0 10px 22px rgba(0,0,0,.06);
       user-select:none;
+      min-height: 44px;
+      box-sizing: border-box;
+      line-height: 1.15;
     }
     .checkbox input{
-      width:18px; height:18px;
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      margin: 0;
       accent-color:#111;
     }
     .checkbox span{ font-weight:700; white-space:nowrap; }
@@ -475,7 +491,7 @@
       width: var(--hitSize);
       height: var(--hitSize);
       position:absolute;
-      transform: translate3d(-50%, -50%, 0);
+      transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
       cursor:pointer;
     }
 
@@ -488,6 +504,7 @@
       opacity:0;
       z-index: 1;
       pointer-events:none;
+      transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
     }
     .starDot.on{ opacity: .92; }
 
@@ -643,12 +660,18 @@
         max-width: none;
         padding: 8px 10px;
         font-size: 12px;
+        min-height: 40px;
       }
       .checkbox{
         width: auto;
         max-width: none;
         padding: 8px 10px;
         gap: 6px;
+        min-height: 40px;
+      }
+      .checkbox input{
+        width: 16px;
+        height: 16px;
       }
       .checkbox span{ font-size: 12px; }
       .tooltip{
@@ -656,6 +679,18 @@
         max-width: none;
         padding: 8px 10px;
         font-size: 12px;
+        min-height: 40px;
+        cursor: pointer;
+      }
+      /* 手机无 hover：用点击展开，避免与桌面 :hover 冲突 */
+      .tooltip:hover .tooltipText{
+        opacity: 0;
+        pointer-events: none;
+      }
+      .tooltip.tooltipOpen .tooltipText{
+        opacity: 1;
+        pointer-events: auto;
+        z-index: 80;
       }
       .tooltip .q{
         width: 18px;
@@ -723,8 +758,8 @@
         transform: translateZ(0);
       }
       .starDot{
-        -webkit-transform: translate3d(-50%, -50%, 0);
-        transform: translate3d(-50%, -50%, 0);
+        -webkit-transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
+        transform: translate3d(calc(-50% + var(--gridNudgeX)), -50%, 0);
       }
     }
 
@@ -739,7 +774,7 @@
   <div class="wrap">
     <div class="topbar">
       <div class="item">
-        <div class="tooltip" id="tooltip">
+        <div class="tooltip" id="tooltip" tabindex="0" role="button" aria-label="查看游戏规则" aria-expanded="false">
           <span class="q">?</span>
           <span>规则</span>
           <div class="tooltipText">
@@ -824,6 +859,7 @@
     const PLAYER = { EMPTY: 0, BLACK: 1, WHITE: 2 };
 
     const $board = document.getElementById('board');
+    const $tooltip = document.getElementById('tooltip');
     const $forbiddenMode = document.getElementById('forbiddenMode');
     const $startBtn = document.getElementById('startBtn');
     const $aiMode = document.getElementById('aiMode');
@@ -1225,7 +1261,6 @@
           // 星点与落子同一套“交点坐标”映射
           dot.style.left = `${(c / (BOARD_N - 1)) * 100}%`;
           dot.style.top = `${(r / (BOARD_N - 1)) * 100}%`;
-          dot.style.transform = 'translate3d(-50%, -50%, 0)';
           dot.dataset.r = String(r);
           dot.dataset.c = String(c);
           $board.appendChild(dot);
@@ -1732,6 +1767,33 @@
           await navigator.clipboard.writeText(link);
         }catch{}
       })();
+    });
+
+    // 小屏：规则 tooltip 用点击展开/收起（无 hover）
+    const mqTooltipTap = window.matchMedia('(max-width: 640px)');
+    function syncTooltipAria(){
+      const open = $tooltip.classList.contains('tooltipOpen');
+      $tooltip.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function closeTooltipIfMobile(){
+      if (mqTooltipTap.matches) $tooltip.classList.remove('tooltipOpen');
+      syncTooltipAria();
+    }
+    /* 捕获阶段：点在外部才关，点在规则按钮/浮层内不关 */
+    document.addEventListener('click', (e) => {
+      if (!mqTooltipTap.matches) return;
+      if ($tooltip.contains(e.target)) return;
+      closeTooltipIfMobile();
+    }, true);
+    $tooltip.addEventListener('click', (e) => {
+      if (!mqTooltipTap.matches) return;
+      e.stopPropagation();
+      $tooltip.classList.toggle('tooltipOpen');
+      syncTooltipAria();
+    });
+    mqTooltipTap.addEventListener('change', () => {
+      if (!mqTooltipTap.matches) $tooltip.classList.remove('tooltipOpen');
+      syncTooltipAria();
     });
 
     // ========== 初始化 ==========
