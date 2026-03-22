@@ -485,19 +485,20 @@
       border-radius: 0;
       pointer-events:none;
       opacity: .85;
+      /* 与 gridIntersectionCss 同一模型：相邻线中心距 (100% - 线宽)/14 */
       background:
-        linear-gradient(to right,
+        repeating-linear-gradient(to right,
           var(--line) 0,
           var(--line) var(--gridLineW),
           transparent var(--gridLineW),
-          transparent 100%
-        ) 0 0 / calc(100% / 14) 100% repeat-x,
-        linear-gradient(to bottom,
+          transparent calc((100% - var(--gridLineW)) / 14)
+        ),
+        repeating-linear-gradient(to bottom,
           var(--line) 0,
           var(--line) var(--gridLineW),
           transparent var(--gridLineW),
-          transparent 100%
-        ) 0 0 / 100% calc(100% / 14) repeat-y;
+          transparent calc((100% - var(--gridLineW)) / 14)
+        );
       z-index: 0;
     }
 
@@ -743,17 +744,22 @@
         font-size: 11px;
         width: min(300px, calc(100vw - 24px));
       }
-      /* 展开时用 fixed 脱离滚动层，否则会被 topbarScroll 裁切且被棋盘挡住 */
-      /* 规则按钮已在 overflow 容器外，用绝对定位即可盖住棋盘 */
+      /* 视口居中浮层，盖住棋盘 */
       .tooltip.tooltipOpen .tooltipText{
         opacity: 1;
         pointer-events: auto;
-        position: absolute;
+        position: fixed;
         left: 50%;
+        top: 50%;
         right: auto;
-        top: calc(100% + 6px);
-        transform: translateX(-50%);
-        z-index: 8000;
+        margin: 0;
+        transform: translate(-50%, -50%);
+        width: min(320px, calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+        max-height: min(72vh, calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        z-index: 10000;
+        box-sizing: border-box;
       }
 
       /* 主区：第一行棋盘通栏，第二行左黑右白 */
@@ -797,17 +803,13 @@
       }
       .label{ font-size: 10px; }
 
-      /* Safari/iOS：合成层 + 裁剪外溢，减少落子时网格与背景重算抖动 */
-      .board{
-        overflow: hidden;
-        -webkit-transform: translateZ(0);
-        transform: translateZ(0);
-        isolation: isolate;
-        -webkit-tap-highlight-color: transparent;
+      /* 与 PC 一致：不裁剪棋盘，保证 15×15 线完整、边线棋子可画入木框留白区 */
+      .boardFrame{
+        padding: max(22px, calc(var(--stoneSize) * 0.55 + 14px));
       }
-      .board::before{
-        -webkit-transform: translateZ(0);
-        transform: translateZ(0);
+      .board{
+        overflow: visible;
+        -webkit-tap-highlight-color: transparent;
       }
     }
 
@@ -1257,10 +1259,17 @@
     const cellEls = Array.from({length: BOARD_N}, () => Array.from({length: BOARD_N}, () => null));
     const starDots = [];
 
-    /** 与 .board::before 网格一致：线宽 var(--gridLineW)，15 条线在 14 段内均匀分布 */
-    function gridIntersectionCss(i){
+    /** 与 .board::before 网格一致：线宽 --gridLineW，15 条线在 14 段内均匀分布。
+     *  使用数值 px 写入 calc，避免部分移动端在 calc 内嵌套 var() 时百分比解析偏差。 */
+    function readGridLineWpx(){
+      const v = getComputedStyle(document.documentElement).getPropertyValue('--gridLineW').trim();
+      const n = parseFloat(v);
+      return Number.isFinite(n) && n > 0 ? n : 2;
+    }
+    function gridIntersectionCss(i, lineWp){
       const g = BOARD_N - 1;
-      return `calc(${i} * (100% - var(--gridLineW)) / ${g} + var(--gridLineW) / 2)`;
+      const w = lineWp;
+      return `calc(${i} * (100% - ${w}px) / ${g} + ${w / 2}px)`;
     }
 
     function isStarPoint(r,c){
@@ -1279,14 +1288,15 @@
 
     function initBoardUI(){
       $board.innerHTML = '';
+      const lineWp = readGridLineWpx();
       for (let r=0;r<BOARD_N;r++){
         for (let c=0;c<BOARD_N;c++){
           const cell = document.createElement('div');
           cell.className = 'cell';
           cell.dataset.r = r;
           cell.dataset.c = c;
-          cell.style.left = gridIntersectionCss(c);
-          cell.style.top = gridIntersectionCss(r);
+          cell.style.left = gridIntersectionCss(c, lineWp);
+          cell.style.top = gridIntersectionCss(r, lineWp);
 
           const stone = document.createElement('div');
           stone.className = 'stone';
@@ -1311,8 +1321,8 @@
           if (!isStarPoint(r,c)) continue;
           const dot = document.createElement('div');
           dot.className = 'starDot on';
-          dot.style.left = gridIntersectionCss(c);
-          dot.style.top = gridIntersectionCss(r);
+          dot.style.left = gridIntersectionCss(c, lineWp);
+          dot.style.top = gridIntersectionCss(r, lineWp);
           dot.dataset.r = String(r);
           dot.dataset.c = String(c);
           $board.appendChild(dot);
