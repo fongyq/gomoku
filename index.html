@@ -185,6 +185,39 @@
     .switchBtn input{
       display:none;
     }
+    /* 人机难度：紧跟机器人 icon，与开关同一行 */
+    .switchBtn .aiDifficultySelect{
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 5.5em;
+      margin: 0;
+      padding: 2px 18px 2px 6px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--ink);
+      border: 1px solid rgba(0,0,0,.14);
+      border-radius: 8px;
+      background: rgba(255,255,255,.55);
+      cursor: pointer;
+      box-sizing: border-box;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, rgba(0,0,0,.45) 50%),
+        linear-gradient(135deg, rgba(0,0,0,.45) 50%, transparent 50%);
+      background-position: calc(100% - 10px) 55%, calc(100% - 6px) 55%;
+      background-size: 4px 4px, 4px 4px;
+      background-repeat: no-repeat;
+    }
+    .switchBtn .aiDifficultySelect:disabled{
+      opacity: .45;
+      cursor: not-allowed;
+    }
+    .switchBtn .aiDifficultySelect:focus-visible{
+      outline: 2px solid rgba(29, 167, 90, .45);
+      outline-offset: 1px;
+    }
     .selector{
       width: 34px;
       height: 19px;
@@ -750,6 +783,12 @@
       }
       .switchBtn .switchLabel{ font-size: 12px; }
       .switchBtn .btnIcon{ font-size: 12px; }
+      .switchBtn .aiDifficultySelect{
+        font-size: 11px;
+        max-width: 4.75em;
+        padding: 1px 16px 1px 5px;
+        background-position: calc(100% - 8px) 55%, calc(100% - 5px) 55%;
+      }
       .tooltipText{
         font-size: 11px;
         width: min(300px, calc(100vw - 24px));
@@ -857,6 +896,7 @@
             <div><b>连珠</b>：横/竖/斜任意方向连成 5 子即胜。</div>
             <div><b>计时</b>：对手轮到你时有 <b>30s</b>，超时未落子则判负。</div>
             <div><b>二次确认</b>：第一次点位出现半透明预览；第二次点同一位置才落子。</div>
+            <div><b>人机</b>：机器人旁可选 <b>初级</b> / <b>进阶</b>；进阶会多看一步应手，棋力更强（仍前端计算，适度耗时）。</div>
           </div>
         </div>
       </div>
@@ -874,7 +914,11 @@
 
       <div class="item">
         <label class="switchBtn" for="aiMode">
-          <span class="btnIcon">&#129302;</span>
+          <span class="btnIcon" aria-hidden="true">&#129302;</span>
+          <select id="aiDifficulty" class="aiDifficultySelect" title="人机难度" aria-label="人机难度">
+            <option value="easy">初级</option>
+            <option value="hard">进阶</option>
+          </select>
           <span class="switchLabel">人机对战</span>
           <input type="checkbox" id="aiMode" checked />
           <span class="selector" aria-hidden="true"></span>
@@ -940,6 +984,7 @@
     const $forbiddenMode = document.getElementById('forbiddenMode');
     const $startBtn = document.getElementById('startBtn');
     const $aiMode = document.getElementById('aiMode');
+    const $aiDifficulty = document.getElementById('aiDifficulty');
     const $shareBtn = document.getElementById('shareBtn');
 
     const $blackAvatar = document.getElementById('blackAvatar');
@@ -1170,6 +1215,8 @@
         started: false,                 // 进入页面需要点“开始”
         forbiddenMode: false,
         aiMode: true,
+        /** @type {'easy'|'hard'} 人机难度：easy 为原有一步启发式；hard 为浅层极小极大 */
+        aiDifficulty: 'easy',
         // 玩家占位
         players: { blackId: null, whiteId: null },
         // 对局
@@ -1209,6 +1256,7 @@
         }
         if (!('turnStart' in st)) st.turnStart = null;
         if (typeof st.aiMode !== 'boolean') st.aiMode = true;
+        if (st.aiDifficulty !== 'easy' && st.aiDifficulty !== 'hard') st.aiDifficulty = 'easy';
         if (typeof st.timerPaused !== 'boolean') st.timerPaused = false;
         if (!('pauseRemainSec' in st)) st.pauseRemainSec = null;
       }
@@ -1377,6 +1425,10 @@
       // 禁手模式同步 UI 状态（本地开关 -> state，避免不同标签页不一致）
       $forbiddenMode.checked = !!state.forbiddenMode;
       $aiMode.checked = !!state.aiMode;
+      if ($aiDifficulty){
+        $aiDifficulty.value = state.aiDifficulty === 'hard' ? 'hard' : 'easy';
+        $aiDifficulty.disabled = !state.aiMode;
+      }
 
       // 显示头像：用占位者的 id 做 seed（先占位再显示）
       const blackSeed = state.players.blackId || ('black_' + roomId);
@@ -1474,7 +1526,7 @@
       return TIMER_SEC - Math.floor(elapsed);
     }
 
-    // ========== 人机（中等） ==========
+    // ========== 人机（初级 / 进阶） ==========
     const AI_WEIGHTS = {
       FIVE: 1000000,
       OPEN_FOUR: 120000,
@@ -1485,6 +1537,13 @@
       CLOSED_TWO: 90
     };
 
+    /** 进阶模式：候选范围略大，利于算杀与防冲四 */
+    const AI_HARD_NEARBY = 3;
+    const AI_EASY_NEARBY = 2;
+    const AI_HARD_TOP_MOVES = 20;
+    const AI_HARD_OPP_REPLIES = 10;
+    const AI_HARD_FOLLOW_EVAL_CAP = 24;
+
     function hasNearbyStone(board, r, c, dist = 2){
       for (let rr = Math.max(0, r - dist); rr <= Math.min(BOARD_N - 1, r + dist); rr++){
         for (let cc = Math.max(0, c - dist); cc <= Math.min(BOARD_N - 1, c + dist); cc++){
@@ -1494,7 +1553,7 @@
       return false;
     }
 
-    function collectCandidates(board){
+    function collectCandidates(board, nearbyDist = AI_EASY_NEARBY){
       const out = [];
       let hasStone = false;
       for (let r=0;r<BOARD_N;r++){
@@ -1511,7 +1570,7 @@
       for (let r=0;r<BOARD_N;r++){
         for (let c=0;c<BOARD_N;c++){
           if (board[r][c] !== PLAYER.EMPTY) continue;
-          if (hasNearbyStone(board, r, c, 2)) out.push({ r, c });
+          if (hasNearbyStone(board, r, c, nearbyDist)) out.push({ r, c });
         }
       }
       return out;
@@ -1545,11 +1604,123 @@
       return score;
     }
 
+    /** 一步启发式分（初级与进阶的叶子估值共用） */
+    function scoreOnePly(st, board, mv, ai, human, oppNearbyDist){
+      if (st.forbiddenMode && wouldBeForbidden(board, mv.r, mv.c, ai)) return null;
+      const b1 = deepCopyBoard(board);
+      b1[mv.r][mv.c] = ai;
+      let s = evaluateMoveHeuristic(b1, mv.r, mv.c, ai);
+
+      const oppCandidates = collectCandidates(b1, oppNearbyDist);
+      let oppBest = 0;
+      for (const omv of oppCandidates){
+        if (b1[omv.r][omv.c] !== PLAYER.EMPTY) continue;
+        if (st.forbiddenMode && wouldBeForbidden(b1, omv.r, omv.c, human)) continue;
+        const b2 = deepCopyBoard(b1);
+        b2[omv.r][omv.c] = human;
+        const threat = evaluateMoveHeuristic(b2, omv.r, omv.c, human);
+        if (threat > oppBest) oppBest = threat;
+      }
+      s -= Math.floor(oppBest * 0.92);
+      const mid = (BOARD_N - 1) / 2;
+      s -= Math.floor((Math.abs(mv.r - mid) + Math.abs(mv.c - mid)) * 6);
+      return s;
+    }
+
+    function pickAiMoveEasy(st, board, ai, human, candidates){
+      const scored = [];
+      for (const mv of candidates){
+        const s = scoreOnePly(st, board, mv, ai, human, AI_EASY_NEARBY);
+        if (s === null) continue;
+        scored.push({ ...mv, s });
+      }
+      if (!scored.length) return null;
+      scored.sort((a,b) => b.s - a.s);
+      return { r: scored[0].r, c: scored[0].c };
+    }
+
+    /**
+     * 进阶：在若干强候选上做 2 层极小极大（AI 落子 → 对手 top 应手 → AI 再一步启发式），
+     * 分支有限，适合手机端单次计算。
+     */
+    function pickAiMoveHard(st, board, ai, human, candidates){
+      const prescore = [];
+      for (const mv of candidates){
+        const s = scoreOnePly(st, board, mv, ai, human, AI_HARD_NEARBY);
+        if (s === null) continue;
+        prescore.push({ r: mv.r, c: mv.c, s });
+      }
+      if (!prescore.length) return null;
+      prescore.sort((a,b) => b.s - a.s);
+      const topFirst = prescore.slice(0, AI_HARD_TOP_MOVES);
+
+      let bestMv = { r: topFirst[0].r, c: topFirst[0].c };
+      let bestWorst = -Infinity;
+
+      for (const first of topFirst){
+        const mv = { r: first.r, c: first.c };
+        if (st.forbiddenMode && wouldBeForbidden(board, mv.r, mv.c, ai)) continue;
+        const b1 = deepCopyBoard(board);
+        b1[mv.r][mv.c] = ai;
+
+        const humanCandAll = collectCandidates(b1, AI_HARD_NEARBY);
+        const humanRanked = [];
+        for (const hm of humanCandAll){
+          if (b1[hm.r][hm.c] !== PLAYER.EMPTY) continue;
+          if (st.forbiddenMode && wouldBeForbidden(b1, hm.r, hm.c, human)) continue;
+          const hb = deepCopyBoard(b1);
+          hb[hm.r][hm.c] = human;
+          const th = evaluateMoveHeuristic(hb, hm.r, hm.c, human);
+          humanRanked.push({ r: hm.r, c: hm.c, th });
+        }
+        humanRanked.sort((a,b) => b.th - a.th);
+        const replies = humanRanked.slice(0, AI_HARD_OPP_REPLIES);
+        if (!replies.length) continue;
+
+        let worst = Infinity;
+        for (const hr of replies){
+          const b2 = deepCopyBoard(b1);
+          b2[hr.r][hr.c] = human;
+          if (checkWinner(b2, hr.r, hr.c, human)){
+            worst = -2e9;
+            break;
+          }
+          let bestFollow = -Infinity;
+          const ai2all = collectCandidates(b2, AI_HARD_NEARBY);
+          const followTmp = [];
+          for (const am of ai2all){
+            if (b2[am.r][am.c] !== PLAYER.EMPTY) continue;
+            const sc = scoreOnePly(st, b2, am, ai, human, AI_HARD_NEARBY);
+            if (sc === null) continue;
+            followTmp.push(sc);
+          }
+          followTmp.sort((a,b) => b - a);
+          const cap = Math.min(followTmp.length, AI_HARD_FOLLOW_EVAL_CAP);
+          for (let i=0;i<cap;i++){
+            if (followTmp[i] > bestFollow) bestFollow = followTmp[i];
+          }
+          if (bestFollow === -Infinity) bestFollow = 0;
+          if (bestFollow < worst) worst = bestFollow;
+        }
+        if (worst > bestWorst){
+          bestWorst = worst;
+          bestMv = mv;
+        }
+      }
+      /* 未得到有效估值或应手后必败时退回初级，保证总有合理落子 */
+      if (bestWorst === -Infinity || bestWorst <= -1.5e9){
+        return pickAiMoveEasy(st, board, ai, human, candidates);
+      }
+      return bestMv;
+    }
+
     function pickAiMove(st){
       const board = st.board;
       const ai = PLAYER.WHITE;
       const human = PLAYER.BLACK;
-      const candidates = collectCandidates(board);
+      const hard = st.aiDifficulty === 'hard';
+      const nearby = hard ? AI_HARD_NEARBY : AI_EASY_NEARBY;
+      const candidates = collectCandidates(board, nearby);
 
       // 1) 有直接赢点就下
       for (const mv of candidates){
@@ -1564,33 +1735,8 @@
         if (checkWinner(b, mv.r, mv.c, human)) return mv;
       }
 
-      // 3) 启发式 + 一步反击估值（中等难度）
-      const scored = [];
-      for (const mv of candidates){
-        if (st.forbiddenMode && wouldBeForbidden(board, mv.r, mv.c, ai)) continue;
-        const b1 = deepCopyBoard(board);
-        b1[mv.r][mv.c] = ai;
-        let s = evaluateMoveHeuristic(b1, mv.r, mv.c, ai);
-
-        const oppCandidates = collectCandidates(b1);
-        let oppBest = 0;
-        for (const omv of oppCandidates){
-          if (b1[omv.r][omv.c] !== PLAYER.EMPTY) continue;
-          if (st.forbiddenMode && wouldBeForbidden(b1, omv.r, omv.c, human)) continue;
-          const b2 = deepCopyBoard(b1);
-          b2[omv.r][omv.c] = human;
-          const threat = evaluateMoveHeuristic(b2, omv.r, omv.c, human);
-          if (threat > oppBest) oppBest = threat;
-        }
-        s = s - Math.floor(oppBest * 0.92);
-        // 趋向中心
-        const mid = (BOARD_N - 1) / 2;
-        s -= Math.floor((Math.abs(mv.r - mid) + Math.abs(mv.c - mid)) * 6);
-        scored.push({ ...mv, s });
-      }
-      if (!scored.length) return null;
-      scored.sort((a,b) => b.s - a.s);
-      return { r: scored[0].r, c: scored[0].c };
+      if (hard) return pickAiMoveHard(st, board, ai, human, candidates);
+      return pickAiMoveEasy(st, board, ai, human, candidates);
     }
 
     function tryRunAiTurn(){
@@ -1598,6 +1744,7 @@
       if (!isAiTurn(st) || aiThinking) return;
       aiThinking = true;
       // 给一点思考感并避免与渲染竞争
+      const delay = st.aiDifficulty === 'hard' ? 380 : 260;
       setTimeout(() => {
         withUpdatedState(latest => {
           if (!isAiTurn(latest)) return latest;
@@ -1607,7 +1754,7 @@
           return placeStone(latest, mv.r, mv.c);
         });
         aiThinking = false;
-      }, 260);
+      }, delay);
     }
 
     // ========== 状态更新 ==========
@@ -1768,7 +1915,7 @@
 
       const st = ensureState();
       const remain2 = st.gameOver ? 0 : (st.started ? Math.max(0, getRemainingSec(st)) : -1);
-      const token = `${st.updatedAt}_${st.gameOver?'1':'0'}_${st.lastMove?st.lastMove.at:''}_${st.winAnimToken||0}_${st.currentPlayer}_${st.pendingCell?`${st.pendingCell.r},${st.pendingCell.c}`:''}_${remain2}_${st.timerPaused?1:0}_${st.pauseRemainSec ?? 'x'}_${st.started?1:0}`;
+      const token = `${st.updatedAt}_${st.gameOver?'1':'0'}_${st.lastMove?st.lastMove.at:''}_${st.winAnimToken||0}_${st.currentPlayer}_${st.pendingCell?`${st.pendingCell.r},${st.pendingCell.c}`:''}_${remain2}_${st.timerPaused?1:0}_${st.pauseRemainSec ?? 'x'}_${st.started?1:0}_${st.aiDifficulty||'easy'}`;
       if (token !== lastRenderedToken){
         lastRenderedToken = token;
         render(st);
@@ -1801,6 +1948,16 @@
           if (st.players.whiteId === 'AI_BOT') st.players.whiteId = null;
           if (!st.players.blackId) st.players.blackId = clientId;
         }
+        return st;
+      });
+      tick();
+    });
+
+    $aiDifficulty.addEventListener('mousedown', (e) => e.stopPropagation());
+    $aiDifficulty.addEventListener('click', (e) => e.stopPropagation());
+    $aiDifficulty.addEventListener('change', () => {
+      withUpdatedState(st => {
+        st.aiDifficulty = $aiDifficulty.value === 'hard' ? 'hard' : 'easy';
         return st;
       });
       tick();
